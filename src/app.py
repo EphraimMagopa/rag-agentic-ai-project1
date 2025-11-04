@@ -1,8 +1,10 @@
 import os
 from typing import List
+from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain.memory import ConversationBufferMemory
 from vectordb import VectorDB
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
@@ -14,18 +16,41 @@ load_dotenv()
 
 def load_documents() -> List[str]:
     """
-    Load documents for demonstration.
+    Load documents from the data directory.
 
     Returns:
         List of sample documents
     """
+    data_dir = "data/"
     results = []
-    # TODO: Implement document loading
+    # DONE: Implement document loading
     # HINT: Read the documents from the data directory
     # HINT: Return a list of documents
     # HINT: Your implementation depends on the type of documents you are using (.txt, .pdf, etc.)
 
-    # Your implementation here
+    for filename in os.listdir(data_dir):
+        filepath = os.path.join(data_dir, filename)
+        if os.path.isfile(filepath):
+            try:
+                if filename.endswith(".txt"):
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                elif filename.endswith(".pdf"):
+                    reader = PdfReader(filepath)
+                    content = ""
+                    for page in reader.pages:
+                        content += page.extract_text() + "\n"
+                else:
+                    print(f"Unsupported file type: {filename}")
+                    continue
+                
+                doc = {
+                    "content": content,
+                    "metadata": {"filename": filename}
+                }
+                results.append(doc)
+            except Exception as e:
+                print (f"Error reading {filename}: {e}")
     return results
 
 
@@ -47,13 +72,27 @@ class RAGAssistant:
 
         # Initialize vector database
         self.vector_db = VectorDB()
+        
+        # Initialize memory
+        self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
         # Create RAG prompt template
-        # TODO: Implement your RAG prompt template
+        # Done: Implement your RAG prompt template
         # HINT: Use ChatPromptTemplate.from_template() with a template string
         # HINT: Your template should include placeholders for {context} and {question}
         # HINT: Design your prompt to effectively use retrieved context to answer questions
-        self.prompt_template = None  # Your implementation here
+        self.prompt_template = None 
+        
+        # Create RAG prompt template with chat_history placeholder
+        template_str = (
+            "You are an AI assistant that answers questions based on the provided context.\n"
+            "If the context does not contain relevant information, respond with: "
+            "'I am sorry, but I do not have enough information to answer that.'\n\n"
+            "Context:\n{context}\n\n"
+            "Question: {question}\n"
+            "Answer:"
+        )
+        self.prompt_template = ChatPromptTemplate.from_template(template_str)
 
         # Create the chain
         self.chain = self.prompt_template | self.llm | StrOutputParser()
@@ -112,18 +151,39 @@ class RAGAssistant:
             n_results: Number of relevant chunks to retrieve
 
         Returns:
-            Dictionary containing the answer and retrieved context
+            String answer from the LLM
         """
         llm_answer = ""
-        # TODO: Implement the RAG query pipeline
+        # Done: Implement the RAG query pipeline
         # HINT: Use self.vector_db.search() to retrieve relevant context chunks
         # HINT: Combine the retrieved document chunks into a single context string
         # HINT: Use self.chain.invoke() with context and question to generate the response
         # HINT: Return a string answer from the LLM
 
-        # Your implementation here
+        # Search for relevant document chunks
+        search_results = self.vector_db.search(input, n_results)
+        
+        # Combine the retrieved document chunks into a single context string
+        context_chunks = search_results.get("documents", [])
+        context = "\n---\n".join(context_chunks)
+        
+        # Load conversation history from memory
+        chat_history = self.memory.load_memory_variables({}).get("chat_history", "")
+        
+        # Prepare prompt inputs with conversation history, context, and user question
+        inputs = {
+            "chat_history": chat_history,
+            "context": context,
+            "question": input,
+        }
+        
+        # Generate responses from chain
+        llm_answer = self.chain.invoke(inputs)
+        
+        # Save input and output to memory
+        self.memory.save_context({"input": input}, {"output": llm_answer})
+        
         return llm_answer
-
 
 def main():
     """Main function to demonstrate the RAG assistant."""
@@ -146,7 +206,7 @@ def main():
             if question.lower() == "quit":
                 done = True
             else:
-                result = assistant.query(question)
+                result = assistant.invoke(question)
                 print(result)
 
     except Exception as e:
@@ -155,7 +215,6 @@ def main():
         print("- OPENAI_API_KEY (OpenAI GPT models)")
         print("- GROQ_API_KEY (Groq Llama models)")
         print("- GOOGLE_API_KEY (Google Gemini models)")
-
 
 if __name__ == "__main__":
     main()
