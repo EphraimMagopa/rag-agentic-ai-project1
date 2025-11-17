@@ -1,4 +1,4 @@
-# Retrieval-Augmented Generation (RAG) AI Assistant
+# From Documents to Dialogue: Implementing a Production-Ready RAG System with Multi-Provider LLM Support
 
 ## Overview  
 This project implements a Retrieval-Augmented Generation (RAG) AI assistant that combines a vector database with large language models to answer questions based on custom document corpora. The system uses LangChain for chaining prompts, document retrieval, and conversational memory.
